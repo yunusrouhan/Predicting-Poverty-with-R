@@ -1,0 +1,169 @@
+---
+title: Using Linear Regression to predict Poverty among elderly people in the American
+  Midwest
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+    extra_dependencies: subfig
+---
+The dataset contains 16 columns with information on the population and other factors of 437 counties in the American Midwest. Variable names are self-explanatory with those beginning with a "pop" prefix being numbers of population and those with a "per" prefix being percentages of the total population. I am including new variables called "popcollege" and "popprof". These are the population in each county with a college degree, and the population with a professional job. Using the "popchild" and "popadult" variables I am calculating a new variable "ratioca" which will be the ratio of children to adults in each county's population.
+Using the "inmetro" variable, I am subdividing the full data set to create two smaller data frames which include only rural and metropolitan counties, respectively. Finally, using a random seed I am taking a random sample of 60 counties from the rural poverty dataset and 30 counties from the metro poverty dataset.
+
+Set the working directory and loading the data onto R for analysis. 
+
+```{r}
+### pre-processing ######
+#install.packages("data.table")
+library(corrplot)
+setwd("D:/USF/Semester 2/Qmb")
+library(readxl)
+popdata=read_excel("6304 Regression Project Data.xlsx")
+popdata$popcollege = (popdata$percollege*popdata$poptotal)/100
+popdata$popprof = (popdata$perprof*popdata$poptotal)/100
+popdata$ratioca = (popdata$popchild/popdata$popadult)
+popdata$popchildpoverty = (popdata$perchildpoverty*popdata$popchild)/100
+##subset
+metro = subset(popdata, inmetro == 1)
+rural = subset(popdata, inmetro == 0)
+##Random seed
+set.seed(93827161)
+some.rural.poverty = rural[sample(1:nrow(rural),60,replace=FALSE),]
+some.metro.poverty = metro[sample(1:nrow(metro),30,replace=FALSE),]
+```
+
+Lets view the data to understand what it looks like 
+
+```{r}
+head(popdata)
+```
+
+
+
+
+## Analyzing the data, plotting to check correlation between variables with a correlation matrix
+
+```{r}
+continuous.rural.poverty = subset(some.rural.poverty,select=c("area","poptotal","popdensity","popwhite","popblack","popasian","popadult","popchild","percollege","perprof","perchildpoverty","perelderlypoverty","popcollege","popprof","ratioca","popchildpoverty"))
+plot(continuous.rural.poverty)
+xx=cor(continuous.rural.poverty)
+corrplot(xx,method="circle")
+```
+
+We can see that correlation exits between poptotal and popchild, poptotal  and popdensity, popcollege, popchildpoverty and so on.
+
+```{r}
+regout1=lm(perelderlypoverty~.-ID-county-state,data=some.rural.poverty)
+summary(regout1)
+regout2=lm(perelderlypoverty~perchildpoverty+popchildpoverty+area+poptotal+ratioca,data=some.rural.poverty)
+summary(regout2)
+
+```
+
+The first model (regout1) is a kitchen sink model, with almost all the variables included in it.
+Here only the popchildpoverty was significant having a p-value of 0.0340
+The second model (regout2), has only a few variables and gives better results than model one, with a DF of 54, and two significant variables.
+
+
+After adding and removing a few independent variables, I came up with the final model which outperformed the previous two, with an increased DF and better p-value, along with a good adusted R-squared score.
+
+```{r}
+regout3=lm(perelderlypoverty~perchildpoverty+perprof+popdensity+popcollege,data=some.rural.poverty)
+summary(regout3)
+
+```
+
+Potting the final regression equation to check its conformity to the LINE assumptions of regression
+
+```{r, fig.cap='Figure 1', fig.subcap=c('(a)', '(b)', '(c)')}
+plot(regout3)
+```
+From the Residuals vs Fitted plot we can see that the model violates linearity assumption.
+
+From the qqplot we can assume that the model is normal. 
+
+Also, from the Scale-Location plot, we can see that we have leverage points 13 and 46
+
+From the Residuals vs Leverage plot we can see that the model is heteroscadastic 
+
+```{r}
+#putting a correlation matrix into object
+#install.packages('corrplot')
+#library(corrplot)
+xx=cor(continuous.rural.poverty)
+corrplot(xx,method="circle")
+corrplot(xx,method="number")
+```
+
+Subsetting few columns to find correlation
+
+```{r}
+d1=subset(some.rural.poverty,select=c("perelderlypoverty","perchildpoverty","perprof","popdensity","popcollege","popprof"))
+d2=subset(some.rural.poverty,select=c("perelderlypoverty","perchildpoverty","perprof","popdensity","popcollege"))
+
+yy=cor(d2)
+corrplot(yy,method="number")
+```
+
+The above plot was used to check correlation between the subsetted variables.
+
+```{r}
+#Correlation matrix with p values.
+#install.packages('Hmisc')
+#library(Hmisc)
+#xx=rcorr(as.matrix(d2))
+#xx
+```
+
+###Using Variation Inflation Factors (VIF) to check if multicollinearity exits in the best fit model. 
+Multicollinearity occurs when independent variables in a regression model are correlated.
+
+```{r}
+plot(d2)
+xx=cor(d2)
+corrplot(xx,method="number")
+corrplot(xx,method="ellipse")
+library(car)
+vif(regout3)
+
+```
+
+Since the VIF values for all the variables are close to 1 and less than 5, we can conclude that there is a moderate correlation, but it is not severe enough to warrant corrective measures 
+
+### Determining if any of the counties in "some.rural.poverty" data set have an outsized leverage in influencing the best fit model. 
+
+```{r}
+#boxplot(some.rural.poverty$perelderlypoverty)
+#max(some.rural.poverty$perelderlypoverty)
+#which(some.rural.poverty$perelderlypoverty==18.27736)
+
+#Leverage of Points
+lev=hat(model.matrix(regout3))
+plot(lev,pch=19)
+abline(3*mean(lev),0,col="red",lwd=3)
+some.rural.poverty[lev>(3*mean(lev)),]
+```
+
+```{r}
+#Leverage of Points
+#lev=hat(model.matrix(regout3))
+#plot(lev,pch=19)
+#abline(3*mean(lev),0,col="red",lwd=3)
+#some.rural.poverty[lev>(3*mean(lev)),]
+```
+
+The counties and states above, have an outsized leverage in influencing my best fit model
+
+
+### Assessing how well my best fit model predicts "perelderlypoverty" when applied to the "some.metro.poverty" data frame
+
+```{r}
+ 
+predict(regout3,some.metro.poverty,interval="confidence")
+```
+
+The percentage of elderly poverty is predicted to be 2.98% in Floyd, IN based on the independent
+variables used in regout3 (final regression equation). And, we are 95% confident that the percentage
+of perelderlypoverty would fall between -5.6227978 - 11.592168 %.
+In a similar way rest of the 29 data entries can be interpreted.
